@@ -1,15 +1,23 @@
-import torch
+from torch.nn import Transformer
 from torch import nn
+import torch
 import math
+
+from torch.nn import Transformer
+from torch import nn
+import torch
+import math
+
+
 class TFModel(nn.Module):
-    def __init__(self, iw, ow, d_model, nhead, nlayers, dropout=0.5):
+    def __init__(self, iw, ow, d_model, nhead, nlayers, in_feature_size, dropout=0.5):
         super(TFModel, self).__init__()
         self.encoder_layer = nn.TransformerEncoderLayer(d_model=d_model, nhead=nhead, dropout=dropout)
         self.transformer_encoder = nn.TransformerEncoder(self.encoder_layer, num_layers=nlayers)
         self.pos_encoder = PositionalEncoding(d_model, dropout)
 
         self.encoder = nn.Sequential(
-            nn.Linear(1, d_model // 2),
+            nn.Linear(in_feature_size, d_model // 2),
             nn.ReLU(),
             nn.Linear(d_model // 2, d_model)
         )
@@ -17,7 +25,7 @@ class TFModel(nn.Module):
         self.linear = nn.Sequential(
             nn.Linear(d_model, d_model // 2),
             nn.ReLU(),
-            nn.Linear(d_model // 2, 1)
+            nn.Linear(d_model // 2, in_feature_size)
         )
 
         self.linear2 = nn.Sequential(
