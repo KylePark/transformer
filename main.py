@@ -17,23 +17,30 @@ from CustomLoss2 import CustomLoss2
 def MAPEval(y_pred, y_true):
     return np.mean(np.abs((y_true - y_pred) / y_true)) * 100
 
-def stockPredictTransformer(input_data, test_data):
+def safe_standardize(df):
+    mean = df.mean()
+    std = df.std()
+    return (df - mean) / std if std != 0 else df - mean
+
+def stockPredictTransformer(input_data, test_data1, test_data2):
     # CUDA 디바이스 설정
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print("Using device:", device)
     data = input_data.fillna(0)
-    test_data = test_data.fillna(0)
+    test_data1 = test_data1.fillna(0)
+    test_data2 = test_data2.fillna(0)
     # 데이터 정규화: 평균 0, 표준편차 1로 표준화
     data = (data - data.mean()) / data.std()
-    test_data = (test_data - test_data.mean()) / test_data.std()
-
+    test_data1 = (test_data1 - test_data1.mean()) / test_data1.std()
+    test_data2 = (test_data2 - test_data2.mean()) / test_data2.std()
     train_data = data
 
     print(train_data.columns)
-    print(test_data.columns)
+    print(test_data1.columns)
+    print(test_data2.columns)
 
     # 하이퍼파라미터 설정
-    input_dim = data.shape[1]  # 입력 데이터의 차원
+    input_dim = data.shape[1] - 1  # 입력 데이터의 차원
     embed_dim = 32   # 임베딩 차원
     num_layers = 2  # Transformer 레이어 수
     nhead = 2  # 멀티 헤드 수
@@ -49,15 +56,26 @@ def stockPredictTransformer(input_data, test_data):
     dataset = StockDataset(train_data, window_size)
     train_loader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=4)
 
-    test_data_set = StockDataset(test_data, window_size)
-    val_loader = DataLoader(test_data_set, batch_size=1, shuffle=False)
+    test_data_set1 = StockDataset(test_data1, window_size)
+    val_loader1 = DataLoader(test_data_set1, batch_size=1, shuffle=False)
 
-    running(model, nn.MSELoss(), train_loader, val_loader, 100, "MSELoss")
-    # running(model, CustomLoss(5.0), train_loader, val_loader, 200, "Custom 1")
-    # running(model, CustomLoss2(0.5), train_loader, val_loader, 200, "Custom 2")
+    test_data_set2 = StockDataset(test_data2, window_size)
+    val_loader2 = DataLoader(test_data_set2, batch_size=1, shuffle=False)
 
-def running(model, criterion, train_loader, val_loader, num_epochs, name):
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    running(model, nn.MSELoss(), train_loader, val_loader1, val_loader2, 500, "MSELoss")
+    # running(model, CustomLoss(5.0), train_loader, val_loader1, val_loader2, 200, "Custom 1")
+    # running(model, CustomLoss2(0.5), train_loader, val_loader1, val_loader2, 100, "Custom 2")
+
+
+def running(model, criterion, train_loader, val_loader1, val_loader2, num_epochs, name):
+
+    if (torch.cuda.is_available()):
+        device = torch.device("cuda")
+    elif torch.backends.mps.is_available():
+        device = torch.device("mps")
+    else:
+        device = torch.device("cpu")
+
     print("Using device:", device)
     # 하이퍼파라미터 설정
     learning_rate = 0.00001
@@ -65,15 +83,27 @@ def running(model, criterion, train_loader, val_loader, num_epochs, name):
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 
     train_losses = []
-    val_losses = []
+    val_losses1 = []
+    val_losses2 = []
 
     patience = 100  # Number of epochs to wait
     min_delta = 0.0000001  # Minimum improvement in validation loss
     best_val_loss = float('inf')  # Track the best validation loss
     early_stop_counter = 0  # Track the number of non-improving epochs
 
+    #기 저장된 데이터 로드
+    df_train = pd.read_csv("./checkpoint_train_loss_5min_390_MSELoss")
+    train_losses = df_train["train_loss"].tolist()
+    df_train = pd.read_csv("./checkpoint_val1_loss_5min_390_MSELoss")
+    val_losses1 = df_train["val_loss1"].tolist()
+    df_train = pd.read_csv("./checkpoint_val2_loss_5min_390_MSELoss")
+    val_losses2 = df_train["val_loss2"].tolist()
+    checkpoint = torch.load("checkpoint_epoch_5min_390_MSELoss.pth")  # 예제: 50번째 epoch 모델 로드
+    model.load_state_dict(checkpoint)
+
     for epoch in range(num_epochs):
         # Training phase
+
         model.train()
         running_loss = 0.0
         for x, y in train_loader:
@@ -89,26 +119,30 @@ def running(model, criterion, train_loader, val_loader, num_epochs, name):
             running_loss += loss.item()
         train_losses.append(running_loss / len(train_loader))
 
+
         # Validation phase
         model.eval()
-        val_loss = 0.0
+        val_loss1 = 0.0
+        print(len(val_loader1))
+        print(len(val_loader2))
+
         with torch.no_grad():
-            for x, y in val_loader:
+            for x, y in val_loader1:
                 x, y = x.to(device), y.to(device)
                 y_pred = model(x, x[:, -1, :].unsqueeze(1))
                 # 출력 크기 조정
                 y_pred = y_pred.squeeze(-1).squeeze(-1)  # (1, 1, 1) -> (1,)
 
                 loss = criterion(y_pred, y)
-                val_loss += loss.item()
-        val_loss = val_loss / len(val_loader)
-        val_losses.append(val_loss)
+                val_loss1 += loss.item()
+        val_loss1 = val_loss1 / len(val_loader1)
+        val_losses1.append(val_loss1)
         time = datetime.now().strftime('%Y.%m.%d - %H:%M:%S')
-        print(f"{time} Epoch {epoch + 1}/{num_epochs}, Train Loss: {train_losses[-1]:.4f}, Val Loss: {val_loss:.4f}")
+        print(f"{time} Epoch {epoch + 1}/{num_epochs}, Train Loss: {train_losses[-1]:.4f}, Val Loss: {val_loss1:.4f}")
 
         # Check for Early Stopping
-        if best_val_loss - val_loss > min_delta:
-            best_val_loss = val_loss
+        if best_val_loss - val_loss1 > min_delta:
+            best_val_loss = val_loss1
             early_stop_counter = 0  # Reset counter if validation loss improves
         else:
             early_stop_counter += 1  # Increment counter if no improvement
@@ -118,26 +152,65 @@ def running(model, criterion, train_loader, val_loader, num_epochs, name):
                 print(f"{time} Early stopping triggered.")
                 # break
 
-    # Plotting
+        best_val_loss = float('inf')  # Track the best validation loss
+        val_loss2 = 0.0
+        with torch.no_grad():
+            for x, y in val_loader1:
+                x, y = x.to(device), y.to(device)
+                y_pred = model(x, x[:, -1, :].unsqueeze(1))
+                # 출력 크기 조정
+                y_pred = y_pred.squeeze(-1).squeeze(-1)  # (1, 1, 1) -> (1,)
+
+                loss = criterion(y_pred, y)
+                val_loss2 += loss.item()
+        val_loss2 = val_loss2 / len(val_loader1)
+        val_losses2.append(val_loss2)
+        time = datetime.now().strftime('%Y.%m.%d - %H:%M:%S')
+        print(f"{time} Epoch {epoch + 1}/{num_epochs}, Train Loss: {train_losses[-1]:.4f}, Val Loss: {val_loss2:.4f}")
+
+        # Check for Early Stopping
+        if best_val_loss - val_loss2 > min_delta:
+            best_val_loss = val_loss2
+            early_stop_counter = 0  # Reset counter if validation loss improves
+        else:
+            early_stop_counter += 1  # Increment counter if no improvement
+            time = datetime.now().strftime('%Y.%m.%d - %H:%M:%S')
+            print(f"{time} Validation loss did not improve. Counter: {early_stop_counter}/{patience}")
+            if early_stop_counter >= patience:
+                print(f"{time} Early stopping triggered.")
+                # break
+
+        if (epoch+301) % 30 == 0:
+            save_model_loss(model, 301, epoch, name, train_losses, val_losses1, val_losses2)
+
+    draw_loss(train_losses, val_losses1, val_losses2, name)
+
+    predictions, actuals = predict(model, val_loader1)
+    draw_predict(predictions, actuals)
+
+    predictions, actuals = predict(model, val_loader2)
+    draw_predict(predictions, actuals)
+
+
+def save_model_loss(model, num, epoch, name, train_losses, val_losses1, val_losses2):
+    torch.save(model.state_dict(), f"checkpoint_epoch_5min_{epoch + num}_{name}.pth")
+    print(f"Epoch {epoch + num}: 모델 저장 완료")
+    loss_df = pd.DataFrame({"train_loss": train_losses})
+    loss_df.to_csv(f"checkpoint_train_loss_5min_{epoch + num}_{name}", index=False)
+    loss_df = pd.DataFrame({"val_loss1": val_losses1})
+    loss_df.to_csv(f"checkpoint_val1_loss_5min_{epoch + num}_{name}", index=False)
+    loss_df = pd.DataFrame({"val_loss2": val_losses2})
+    loss_df.to_csv(f"checkpoint_val2_loss_5min_{epoch + num}_{name}", index=False)
+def draw_loss(train_losses, val_losses1, val_losses2, name):
     plt.figure(figsize=(10, 6))
     plt.plot(range(1, len(train_losses) + 1), train_losses, label="Train Loss", color="blue")
-    plt.plot(range(1, len(val_losses) + 1), val_losses, label="Validation Loss", color="orange")
+    plt.plot(range(1, len(val_losses1) + 1), val_losses1, label="Validation Loss1", color="orange")
+    plt.plot(range(1, len(val_losses2) + 1), val_losses2, label="Validation Loss2", color="red")
     plt.xlabel("Epoch")
     plt.ylabel("Loss")
     plt.title(f"Training and Validation Loss: {name}")
     plt.legend()
     plt.grid()
-    plt.show()
-
-    predictions, actuals = predict(model, val_loader)
-
-    plt.figure(figsize=(12, 6))
-    plt.plot(actuals, label="Actual Price")
-    plt.plot(predictions, label="Predicted Price")
-    plt.xlabel("Time")
-    plt.ylabel("Price")
-    plt.title("Stock Price Prediction using Transformer")
-    plt.legend()
     plt.show()
 
 def predict(model, loader):
@@ -151,7 +224,7 @@ def predict(model, loader):
         for x, y in loader:
             # x, y를 GPU로 이동
             x, y = x.to(device), y.to(device)
-
+            print(f"x[:, -1, :]: {x[:, -1, :]}, y: {y}")
             # 예측 수행
             prediction = model(x, x[:, -1, :].unsqueeze(1))
 
@@ -161,6 +234,15 @@ def predict(model, loader):
 
     return predictions, actuals
 
+def draw_predict(predictions, actuals):
+    plt.figure(figsize=(12, 6))
+    plt.plot(actuals, label="Actual Price")
+    plt.plot(predictions, label="Predicted Price")
+    plt.xlabel("Time")
+    plt.ylabel("Price")
+    plt.title("Stock Price Prediction using Transformer")
+    plt.legend()
+    plt.show()
 
 def calculate_rsi(df, window=14):
     delta = df['closing'].diff()  # 종가의 변화량
@@ -197,29 +279,32 @@ def resample_to_5min(df):
     return df
 
 if __name__ == '__main__':
-    df_init = pd.read_csv('./XBTUSD_1m_rsi_real.csv')
+    df_init = pd.read_csv('./XBTUSD_5m_rsi_real.csv')
 
     df_train = df_init.loc[df_init['timestamp'] >= '2017-06-01 00:00:00+00:00']
-    df_train = df_train.loc[df_train['timestamp'] < '2022-03-22 21:35:00+00:00']
+    df_train = df_train.loc[df_train['timestamp'] < '2022-01-22 21:35:00+00:00']
     #
-    df_test = df_init.loc[df_init['timestamp'] >= '2022-03-22 21:35:00+00:00']
+    df_test = df_init.loc[df_init['timestamp'] >= '2022-03-21 21:35:00+00:00']
 
     df_train.reset_index(drop=True, inplace=True)
     df_test.reset_index(drop=True, inplace=True)
 
+    #
     min_max_scaler = MinMaxScaler()
 
     df_train = df_train.drop(columns=['timestamp']).copy()
     df_train = df_train.drop(columns=['change_30min']).copy()
     #
-    df_test = df_test.drop(columns=['timestamp']).copy()
     df_test = df_test.drop(columns=['change_30min']).copy()
 
-    df_train = df_train.drop(columns=['volume']).copy()
-    df_test = df_test.drop(columns=['volume']).copy()
+    df_test2 = df_test.loc[df_test['timestamp'] < '2022-03-22 23:35:00+00:00']
+    df_test3 = df_test.loc[df_test['timestamp'] >= '2022-03-23 02:35:00+00:00']
+
+    df_test2 = df_test2.drop(columns=['timestamp']).copy()
+    df_test3 = df_test3.drop(columns=['timestamp']).copy()
 
     print(df_test.columns)
     print(df_train.columns)
-    stockPredictTransformer(df_train, df_test)
+    stockPredictTransformer(df_train, df_test2, df_test3)
 
     torch.cuda.empty_cache()

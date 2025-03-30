@@ -9,6 +9,7 @@ class StockDataset(Dataset):
         return len(self.data) - self.window_size
 
     def __getitem__(self, idx):
-        x = self.data[idx:idx + self.window_size]
-        y = self.data[idx + self.window_size, 7]  # rate 열 예측
+        #TODO 예측열이 x에 들어가지 않도록
+        x = self.data[idx:idx + self.window_size, :8]
+        y = self.data[idx + self.window_size, 8]  # rate 열 예측
         return x, y
