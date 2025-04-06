@@ -92,14 +92,14 @@ def running(model, criterion, train_loader, val_loader1, val_loader2, num_epochs
     early_stop_counter = 0  # Track the number of non-improving epochs
 
     #기 저장된 데이터 로드
-    df_train = pd.read_csv("./checkpoint_train_loss_5min_390_MSELoss")
-    train_losses = df_train["train_loss"].tolist()
-    df_train = pd.read_csv("./checkpoint_val1_loss_5min_390_MSELoss")
-    val_losses1 = df_train["val_loss1"].tolist()
-    df_train = pd.read_csv("./checkpoint_val2_loss_5min_390_MSELoss")
-    val_losses2 = df_train["val_loss2"].tolist()
-    checkpoint = torch.load("checkpoint_epoch_5min_390_MSELoss.pth")  # 예제: 50번째 epoch 모델 로드
-    model.load_state_dict(checkpoint)
+    # df_train = pd.read_csv("./checkpoint_train_loss_1min_159_MSELoss")
+    # train_losses = df_train["train_loss"].tolist()
+    # df_train = pd.read_csv("./checkpoint_val1_loss_1min_159_MSELoss")
+    # val_losses1 = df_train["val_loss1"].tolist()
+    # df_train = pd.read_csv("./checkpoint_val2_loss_1min_159_MSELoss")
+    # val_losses2 = df_train["val_loss2"].tolist()
+    # checkpoint = torch.load("./checkpoint_epoch_1min_159_MSELoss.pth")  # 예제: 50번째 epoch 모델 로드
+    # model.load_state_dict(checkpoint)
 
     for epoch in range(num_epochs):
         # Training phase
@@ -180,8 +180,8 @@ def running(model, criterion, train_loader, val_loader1, val_loader2, num_epochs
                 print(f"{time} Early stopping triggered.")
                 # break
 
-        if (epoch+301) % 30 == 0:
-            save_model_loss(model, 301, epoch, name, train_losses, val_losses1, val_losses2)
+        if (epoch+1) % 10 == 0:
+            save_model_loss(model, 120, epoch, name, train_losses, val_losses1, val_losses2)
 
     draw_loss(train_losses, val_losses1, val_losses2, name)
 
@@ -193,14 +193,14 @@ def running(model, criterion, train_loader, val_loader1, val_loader2, num_epochs
 
 
 def save_model_loss(model, num, epoch, name, train_losses, val_losses1, val_losses2):
-    torch.save(model.state_dict(), f"checkpoint_epoch_5min_{epoch + num}_{name}.pth")
+    torch.save(model.state_dict(), f"checkpoint_epoch_1min_{epoch + num}_{name}.pth")
     print(f"Epoch {epoch + num}: 모델 저장 완료")
     loss_df = pd.DataFrame({"train_loss": train_losses})
-    loss_df.to_csv(f"checkpoint_train_loss_5min_{epoch + num}_{name}", index=False)
+    loss_df.to_csv(f"checkpoint_train_loss_1min_{epoch + num}_{name}", index=False)
     loss_df = pd.DataFrame({"val_loss1": val_losses1})
-    loss_df.to_csv(f"checkpoint_val1_loss_5min_{epoch + num}_{name}", index=False)
+    loss_df.to_csv(f"checkpoint_val1_loss_1min_{epoch + num}_{name}", index=False)
     loss_df = pd.DataFrame({"val_loss2": val_losses2})
-    loss_df.to_csv(f"checkpoint_val2_loss_5min_{epoch + num}_{name}", index=False)
+    loss_df.to_csv(f"checkpoint_val2_loss_1min_{epoch + num}_{name}", index=False)
 def draw_loss(train_losses, val_losses1, val_losses2, name):
     plt.figure(figsize=(10, 6))
     plt.plot(range(1, len(train_losses) + 1), train_losses, label="Train Loss", color="blue")
@@ -214,7 +214,13 @@ def draw_loss(train_losses, val_losses1, val_losses2, name):
     plt.show()
 
 def predict(model, loader):
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    if torch.backends.mps.is_available():
+        device = torch.device("mps")  # Apple Silicon (GPU)
+    elif torch.cuda.is_available():
+        device = torch.device("cuda")  # NVIDIA GPU
+    else:
+        device = torch.device("cpu")  # CPU fallback
+
     model.to(device)
     model.eval()
     predictions = []
@@ -279,7 +285,15 @@ def resample_to_5min(df):
     return df
 
 if __name__ == '__main__':
-    df_init = pd.read_csv('./XBTUSD_5m_rsi_real.csv')
+    df_init = pd.read_csv('./XBTUSD_1m_rsi_real.csv')
+    df_init = df_init.drop(columns=['symbol']).copy()
+    df_init = df_init.drop(columns=['vwap']).copy()
+    df_init = df_init.drop(columns=['home_notional']).copy()
+    df_init = df_init.drop(columns=['foreign_notional']).copy()
+    df_init = df_init.drop(columns=['bin_size']).copy()
+    df_init = df_init.drop(columns=['volume']).copy()
+    df_init = df_init.drop(columns=['change_30min']).copy()
+
 
     df_train = df_init.loc[df_init['timestamp'] >= '2017-06-01 00:00:00+00:00']
     df_train = df_train.loc[df_train['timestamp'] < '2022-01-22 21:35:00+00:00']
@@ -293,9 +307,9 @@ if __name__ == '__main__':
     min_max_scaler = MinMaxScaler()
 
     df_train = df_train.drop(columns=['timestamp']).copy()
-    df_train = df_train.drop(columns=['change_30min']).copy()
+    # df_train = df_train.drop(columns=['change_30min']).copy()
     #
-    df_test = df_test.drop(columns=['change_30min']).copy()
+    # df_test = df_test.drop(columns=['change_30min']).copy()
 
     df_test2 = df_test.loc[df_test['timestamp'] < '2022-03-22 23:35:00+00:00']
     df_test3 = df_test.loc[df_test['timestamp'] >= '2022-03-23 02:35:00+00:00']
