@@ -13,6 +13,10 @@ from datetime import datetime
 from sklearn.preprocessing import StandardScaler
 from CustomLoss import CustomLoss
 from CustomLoss2 import CustomLoss2
+from torch.distributions import Normal
+from torch.optim import Adam
+import os
+import math
 
 def MAPEval(y_pred, y_true):
     return np.mean(np.abs((y_true - y_pred) / y_true)) * 100
@@ -92,96 +96,96 @@ def running(model, criterion, train_loader, val_loader1, val_loader2, num_epochs
     early_stop_counter = 0  # Track the number of non-improving epochs
 
     #기 저장된 데이터 로드
-    # df_train = pd.read_csv("./checkpoint_train_loss_1min_159_MSELoss")
-    # train_losses = df_train["train_loss"].tolist()
-    # df_train = pd.read_csv("./checkpoint_val1_loss_1min_159_MSELoss")
-    # val_losses1 = df_train["val_loss1"].tolist()
-    # df_train = pd.read_csv("./checkpoint_val2_loss_1min_159_MSELoss")
-    # val_losses2 = df_train["val_loss2"].tolist()
-    # checkpoint = torch.load("./checkpoint_epoch_1min_159_MSELoss.pth")  # 예제: 50번째 epoch 모델 로드
-    # model.load_state_dict(checkpoint)
+    df_train = pd.read_csv("./checkpoint_train_loss_1min_259_MSELoss")
+    train_losses = df_train["train_loss"].tolist()
+    df_train = pd.read_csv("./checkpoint_val1_loss_1min_259_MSELoss")
+    val_losses1 = df_train["val_loss1"].tolist()
+    df_train = pd.read_csv("./checkpoint_val2_loss_1min_259_MSELoss")
+    val_losses2 = df_train["val_loss2"].tolist()
+    checkpoint = torch.load("./checkpoint_epoch_1min_259_MSELoss.pth")  # 예제: 50번째 epoch 모델 로드
+    model.load_state_dict(checkpoint)
 
-    for epoch in range(num_epochs):
-        # Training phase
-
-        model.train()
-        running_loss = 0.0
-        for x, y in train_loader:
-            x, y = x.to(device), y.to(device)
-            optimizer.zero_grad()
-            y_pred = model(x, x[:, -1, :].unsqueeze(1))
-            # 출력 크기 조정
-            y_pred = y_pred.squeeze(-1).squeeze(-1)  # (1, 1, 1) -> (1,)
-
-            loss = criterion(y_pred, y)
-            loss.backward()
-            optimizer.step()
-            running_loss += loss.item()
-        train_losses.append(running_loss / len(train_loader))
-
-
-        # Validation phase
-        model.eval()
-        val_loss1 = 0.0
-        print(len(val_loader1))
-        print(len(val_loader2))
-
-        with torch.no_grad():
-            for x, y in val_loader1:
-                x, y = x.to(device), y.to(device)
-                y_pred = model(x, x[:, -1, :].unsqueeze(1))
-                # 출력 크기 조정
-                y_pred = y_pred.squeeze(-1).squeeze(-1)  # (1, 1, 1) -> (1,)
-
-                loss = criterion(y_pred, y)
-                val_loss1 += loss.item()
-        val_loss1 = val_loss1 / len(val_loader1)
-        val_losses1.append(val_loss1)
-        time = datetime.now().strftime('%Y.%m.%d - %H:%M:%S')
-        print(f"{time} Epoch {epoch + 1}/{num_epochs}, Train Loss: {train_losses[-1]:.4f}, Val Loss: {val_loss1:.4f}")
-
-        # Check for Early Stopping
-        if best_val_loss - val_loss1 > min_delta:
-            best_val_loss = val_loss1
-            early_stop_counter = 0  # Reset counter if validation loss improves
-        else:
-            early_stop_counter += 1  # Increment counter if no improvement
-            time = datetime.now().strftime('%Y.%m.%d - %H:%M:%S')
-            print(f"{time} Validation loss did not improve. Counter: {early_stop_counter}/{patience}")
-            if early_stop_counter >= patience:
-                print(f"{time} Early stopping triggered.")
-                # break
-
-        best_val_loss = float('inf')  # Track the best validation loss
-        val_loss2 = 0.0
-        with torch.no_grad():
-            for x, y in val_loader1:
-                x, y = x.to(device), y.to(device)
-                y_pred = model(x, x[:, -1, :].unsqueeze(1))
-                # 출력 크기 조정
-                y_pred = y_pred.squeeze(-1).squeeze(-1)  # (1, 1, 1) -> (1,)
-
-                loss = criterion(y_pred, y)
-                val_loss2 += loss.item()
-        val_loss2 = val_loss2 / len(val_loader1)
-        val_losses2.append(val_loss2)
-        time = datetime.now().strftime('%Y.%m.%d - %H:%M:%S')
-        print(f"{time} Epoch {epoch + 1}/{num_epochs}, Train Loss: {train_losses[-1]:.4f}, Val Loss: {val_loss2:.4f}")
-
-        # Check for Early Stopping
-        if best_val_loss - val_loss2 > min_delta:
-            best_val_loss = val_loss2
-            early_stop_counter = 0  # Reset counter if validation loss improves
-        else:
-            early_stop_counter += 1  # Increment counter if no improvement
-            time = datetime.now().strftime('%Y.%m.%d - %H:%M:%S')
-            print(f"{time} Validation loss did not improve. Counter: {early_stop_counter}/{patience}")
-            if early_stop_counter >= patience:
-                print(f"{time} Early stopping triggered.")
-                # break
-
-        if (epoch+1) % 10 == 0:
-            save_model_loss(model, 120, epoch, name, train_losses, val_losses1, val_losses2)
+    # for epoch in range(num_epochs):
+    #     # Training phase
+    #
+    #     model.train()
+    #     running_loss = 0.0
+    #     for x, y in train_loader:
+    #         x, y = x.to(device), y.to(device)
+    #         optimizer.zero_grad()
+    #         y_pred = model(x, x[:, -1, :].unsqueeze(1))
+    #         # 출력 크기 조정
+    #         y_pred = y_pred.squeeze(-1).squeeze(-1)  # (1, 1, 1) -> (1,)
+    #
+    #         loss = criterion(y_pred, y)
+    #         loss.backward()
+    #         optimizer.step()
+    #         running_loss += loss.item()
+    #     train_losses.append(running_loss / len(train_loader))
+    #
+    #
+    #     # Validation phase
+    #     model.eval()
+    #     val_loss1 = 0.0
+    #     print(len(val_loader1))
+    #     print(len(val_loader2))
+    #
+    #     with torch.no_grad():
+    #         for x, y in val_loader1:
+    #             x, y = x.to(device), y.to(device)
+    #             y_pred = model(x, x[:, -1, :].unsqueeze(1))
+    #             # 출력 크기 조정
+    #             y_pred = y_pred.squeeze(-1).squeeze(-1)  # (1, 1, 1) -> (1,)
+    #
+    #             loss = criterion(y_pred, y)
+    #             val_loss1 += loss.item()
+    #     val_loss1 = val_loss1 / len(val_loader1)
+    #     val_losses1.append(val_loss1)
+    #     time = datetime.now().strftime('%Y.%m.%d - %H:%M:%S')
+    #     print(f"{time} Epoch {epoch + 1}/{num_epochs}, Train Loss: {train_losses[-1]:.4f}, Val Loss: {val_loss1:.4f}")
+    #
+    #     # Check for Early Stopping
+    #     if best_val_loss - val_loss1 > min_delta:
+    #         best_val_loss = val_loss1
+    #         early_stop_counter = 0  # Reset counter if validation loss improves
+    #     else:
+    #         early_stop_counter += 1  # Increment counter if no improvement
+    #         time = datetime.now().strftime('%Y.%m.%d - %H:%M:%S')
+    #         print(f"{time} Validation loss did not improve. Counter: {early_stop_counter}/{patience}")
+    #         if early_stop_counter >= patience:
+    #             print(f"{time} Early stopping triggered.")
+    #             # break
+    #
+    #     best_val_loss = float('inf')  # Track the best validation loss
+    #     val_loss2 = 0.0
+    #     with torch.no_grad():
+    #         for x, y in val_loader1:
+    #             x, y = x.to(device), y.to(device)
+    #             y_pred = model(x, x[:, -1, :].unsqueeze(1))
+    #             # 출력 크기 조정
+    #             y_pred = y_pred.squeeze(-1).squeeze(-1)  # (1, 1, 1) -> (1,)
+    #
+    #             loss = criterion(y_pred, y)
+    #             val_loss2 += loss.item()
+    #     val_loss2 = val_loss2 / len(val_loader1)
+    #     val_losses2.append(val_loss2)
+    #     time = datetime.now().strftime('%Y.%m.%d - %H:%M:%S')
+    #     print(f"{time} Epoch {epoch + 1}/{num_epochs}, Train Loss: {train_losses[-1]:.4f}, Val Loss: {val_loss2:.4f}")
+    #
+    #     # Check for Early Stopping
+    #     if best_val_loss - val_loss2 > min_delta:
+    #         best_val_loss = val_loss2
+    #         early_stop_counter = 0  # Reset counter if validation loss improves
+    #     else:
+    #         early_stop_counter += 1  # Increment counter if no improvement
+    #         time = datetime.now().strftime('%Y.%m.%d - %H:%M:%S')
+    #         print(f"{time} Validation loss did not improve. Counter: {early_stop_counter}/{patience}")
+    #         if early_stop_counter >= patience:
+    #             print(f"{time} Early stopping triggered.")
+    #             # break
+    #
+    #     if (epoch+1) % 10 == 0:
+    #         save_model_loss(model, 270, epoch, name, train_losses, val_losses1, val_losses2)
 
     draw_loss(train_losses, val_losses1, val_losses2, name)
 
@@ -250,39 +254,121 @@ def draw_predict(predictions, actuals):
     plt.legend()
     plt.show()
 
-def calculate_rsi(df, window=14):
-    delta = df['closing'].diff()  # 종가의 변화량
-    gain = (delta.where(delta > 0, 0)).rolling(window=window).mean()  # 상승 평균
-    loss = (-delta.where(delta < 0, 0)).rolling(window=window).mean()  # 하락 평균
+def save_checkpoint(model, optimizer, epoch, train_losses, val_losses, path='checkpoint.pth'):
+    torch.save({
+        'model_state_dict': model.state_dict(),
+        'optimizer_state_dict': optimizer.state_dict(),
+        'epoch': epoch,
+        'train_losses': train_losses,
+        'val_losses': val_losses
+    }, path)
 
-    # RSI 계산
-    rs = gain / loss
-    rsi = 100 - (100 / (1 + rs))
-    return rsi
-
-
-def calculate_obv(df):
-    obv = np.where(df['closing'].diff() > 0, df['volume'], -df['volume'])  # OBV 계산
-    obv = np.cumsum(obv)  # 누적 합산
-    return obv
+    # 손실들을 CSV로 저장
+    loss_df = pd.DataFrame({'epoch': range(len(train_losses)), 'train_loss': train_losses, 'val_loss': val_losses})
+    loss_df.to_csv('losses.csv', index=False)
 
 
-def resample_to_5min(df):
-    # 5분봉 데이터프레임 생성
-    # df_5min = df.resample('5T').agg({
-    #     'opening': 'first',
-    #     'high': 'max',
-    #     'low': 'min',
-    #     'closing': 'last',
-    #     'volume': 'sum'
-    # })
-    # df.dropna(inplace=True)
+def load_checkpoint(model, optimizer, path='checkpoint.pth'):
+    if not os.path.exists(path):
+        return model, optimizer, 0, [], []
 
-    # RSI와 OBV 계산하여 컬럼 추가
-    df['rsi'] = calculate_rsi(df)
-    df['obv'] = calculate_obv(df)
+    checkpoint = torch.load(path)
+    model.load_state_dict(checkpoint['model_state_dict'])
+    optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+    epoch = checkpoint['epoch']
+    train_losses = checkpoint['train_losses']
+    val_losses = checkpoint['val_losses']
+    return model, optimizer, epoch, train_losses, val_losses
 
-    return df
+def gaussian_nll_loss(y_pred, y_true):
+    mu = y_pred[:, 0]
+    log_sigma = y_pred[:, 1]
+    sigma = torch.exp(log_sigma)
+
+    loss = 0.5 * torch.log(2 * math.pi * sigma ** 2) + ((y_true - mu) ** 2) / (2 * sigma ** 2)
+    return loss.mean()
+
+def train_model(model, optimizer, train_loader, val_loader, num_epochs, device, start_epoch=0, train_losses=[], val_losses=[]):
+    model.to(device)
+
+    for epoch in range(start_epoch, num_epochs):
+        model.train()
+        train_loss = 0.0
+        for x, y in train_loader:
+            x, y = x.to(device), y.to(device)
+
+            optimizer.zero_grad()
+            tgt = x[:, -1:, :]
+            output = model(x, tgt).squeeze(1)  # (batch, 2)
+
+            loss = gaussian_nll_loss(output, y)
+            loss.backward()
+            optimizer.step()
+
+            train_loss += loss.item()
+
+        train_loss /= len(train_loader)
+        train_losses.append(train_loss)
+
+        # 검증
+        model.eval()
+        val_loss = 0.0
+        with torch.no_grad():
+            for x, y in val_loader:
+                x, y = x.to(device), y.to(device)
+                tgt = x[:, -1:, :]
+                output = model(x, tgt).squeeze(1)
+                val_loss += gaussian_nll_loss(output, y).item()
+
+        val_loss /= len(val_loader)
+        val_losses.append(val_loss)
+
+        print(f"Epoch {epoch+1}: Train Loss = {train_loss:.4f}, Val Loss = {val_loss:.4f}")
+
+        # 체크포인트 저장
+        save_checkpoint(model, optimizer, epoch+1, train_losses, val_losses)
+
+
+def predict_with_uncertainty(model, loader, device):
+    model.eval()
+    model.to(device)
+
+    predictions = []
+    uncertainties = []
+    actuals = []
+
+    with torch.no_grad():
+        for x, y in loader:
+            x = x.to(device)
+            tgt = x[:, -1:, :]
+            output = model(x, tgt).squeeze(1)  # (batch, 2)
+
+            mu = output[:, 0].cpu()
+            sigma = torch.exp(output[:, 1]).cpu()
+
+            predictions.extend(mu.tolist())
+            uncertainties.extend(sigma.tolist())
+            actuals.extend(y.cpu().tolist())
+
+    return predictions, uncertainties, actuals
+
+
+def plot_with_uncertainty(preds, sigmas, actuals):
+    x = list(range(len(preds)))
+    preds = torch.tensor(preds)
+    sigmas = torch.tensor(sigmas)
+
+    plt.figure(figsize=(12, 5))
+    plt.plot(x, preds, label='Predicted Mean')
+    plt.fill_between(x, preds - 1.96 * sigmas, preds + 1.96 * sigmas, color='orange', alpha=0.3,
+                     label='95% Confidence Interval')
+    plt.plot(x, actuals, label='Actual', color='green', linestyle='--')
+    plt.legend()
+    plt.title("Prediction with Uncertainty")
+    plt.xlabel("Index")
+    plt.ylabel("Predicted Value")
+    plt.grid(True)
+    plt.show()
 
 if __name__ == '__main__':
     df_init = pd.read_csv('./XBTUSD_1m_rsi_real.csv')
@@ -319,6 +405,5 @@ if __name__ == '__main__':
 
     print(df_test.columns)
     print(df_train.columns)
-    stockPredictTransformer(df_train, df_test2, df_test3)
-
+    # stockPredictTransformer(df_train, df_test2, df_test3)
     torch.cuda.empty_cache()
